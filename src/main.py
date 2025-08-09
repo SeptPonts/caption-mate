@@ -1,15 +1,36 @@
-import os
-
+import click
 from dotenv import load_dotenv
+
+from .cli.commands.auto import auto
+from .cli.commands.config import config
+from .cli.commands.nas import nas
+from .cli.commands.subtitles import subtitles
 
 load_dotenv()
 
 
-def main():
-    print("Hello from caption-mate!")
-    print(os.getenv("OAI_MODEL_O4_MINI"))
-    print(os.getenv("OAI_API_KEY"))
-    print(os.getenv("OAI_BASE_URL"))
+@click.group()
+@click.option(
+    "--config-file",
+    help="Specify custom config file path",
+    envvar="CAPTION_MATE_CONFIG",
+)
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress non-error output")
+@click.pass_context
+def main(ctx, config_file, verbose, quiet):
+    """Caption-Mate: Search and download subtitles from NAS videos"""
+    ctx.ensure_object(dict)
+    ctx.obj["config_file"] = config_file
+    ctx.obj["verbose"] = verbose
+    ctx.obj["quiet"] = quiet
+
+
+# Register commands
+main.add_command(config)
+main.add_command(nas)
+main.add_command(subtitles)
+main.add_command(auto)
 
 
 if __name__ == "__main__":
