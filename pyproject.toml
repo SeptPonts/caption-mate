@@ -1,0 +1,23 @@
+[project]
+name = "caption-mate"
+version = "0.1.0"
+description = "A search and download tool for captions"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "ruff>=0.1.0",
+    "pre-commit>=3.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
