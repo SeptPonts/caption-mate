@@ -2,11 +2,28 @@
 install:
 	uv sync
 	uv run pre-commit install
+	ln -s .venv/bin/activate activate
 
-.PHONY: run
-run:
-	uv run python src/main.py
+.PHONY: init
+init:
+	uv run caption-mate config init
 
+.PHONY: test
+test:
+	uv run caption-mate nas test
+
+.PHONY: tree
+tree:
+	uv run caption-mate nas tree
+
+.PHONY: ls
+ls:
+	uv run caption-mate nas ls
+
+.PHONY: scan
+scan:
+	uv run caption-mate nas scan
+	
 .PHONY: format
 format:
 	uv run ruff format src/
