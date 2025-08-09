@@ -2,7 +2,8 @@
 install:
 	uv sync
 	uv run pre-commit install
-	ln -s .venv/bin/activate activate
+	uv pip install -e .
+	ln -sf .venv/bin/activate activate
 
 .PHONY: init
 init:
