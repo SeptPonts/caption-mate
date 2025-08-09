@@ -20,6 +20,7 @@ class SubtitleInfo:
     release_name: str
     download_url: str
     file_size: int
+    source: str = "unknown"
 
     @property
     def size_human(self) -> str:
@@ -153,6 +154,7 @@ class OpenSubtitlesAPI:
                     release_name=attrs.get("release", ""),
                     download_url=file_info.get("link", ""),
                     file_size=file_info.get("file_size", 0),
+                    source="opensubtitles",
                 )
 
                 subtitles.append(subtitle)
@@ -205,12 +207,168 @@ class OpenSubtitlesAPI:
             raise RuntimeError(f"Download failed: {e}")
 
 
+class AssrtAPI:
+    """ASSRT REST API client"""
+
+    def __init__(self, config: Config):
+        self.config = config
+        self._client: Optional[httpx.AsyncClient] = None
+
+    async def __aenter__(self):
+        await self.connect()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.disconnect()
+
+    async def connect(self) -> None:
+        """Initialize HTTP client"""
+        headers = {
+            "Authorization": f"Bearer {self.config.assrt.api_token}",
+            "User-Agent": self.config.assrt.user_agent,
+            "Content-Type": "application/json",
+        }
+
+        self._client = httpx.AsyncClient(
+            base_url=self.config.assrt.base_url, headers=headers, timeout=30.0
+        )
+
+    async def disconnect(self) -> None:
+        """Close HTTP client"""
+        if self._client:
+            await self._client.aclose()
+            self._client = None
+
+    async def search_subtitles(
+        self,
+        query: Optional[str] = None,
+        file_hash: Optional[str] = None,
+        file_size: Optional[int] = None,
+        imdb_id: Optional[str] = None,
+        languages: Optional[List[str]] = None,
+    ) -> List[SubtitleInfo]:
+        """Search for subtitles"""
+        if not self._client:
+            raise RuntimeError("Client not initialized")
+
+        if not query:
+            return []  # ASSRT requires text search
+
+        params = {
+            "q": query,
+            "cnt": 15,  # Max allowed by ASSRT
+        }
+
+        try:
+            response = await self._client.get("/v1/sub/search", params=params)
+            response.raise_for_status()
+
+            result = response.json()
+
+            # Check for API errors
+            if result.get("status") != 0:
+                error_msg = result.get("errmsg", "Unknown error")
+                raise RuntimeError(f"ASSRT API error: {error_msg}")
+
+            subtitles = []
+            subs_data = result.get("sub", {}).get("subs", [])
+
+            for item in subs_data:
+                # Skip if languages filter is specified and doesn't match
+                sub_lang = self._map_language(item.get("lang", {}).get("desc", ""))
+                if languages and sub_lang not in languages:
+                    continue
+
+                # Get download URL - requires detail call
+                detail_url = f"/v1/sub/detail?id={item.get('id')}"
+                detail_response = await self._client.get(detail_url)
+                detail_response.raise_for_status()
+
+                detail_result = detail_response.json()
+                if detail_result.get("status") != 0:
+                    continue
+
+                detail_data = detail_result.get("sub", {})
+                download_url = detail_data.get("url", "")
+
+                subtitle = SubtitleInfo(
+                    id=str(item.get("id", "")),
+                    language=sub_lang,
+                    filename=item.get("filename", ""),
+                    download_count=int(item.get("download_times", 0)),
+                    rating=float(item.get("rank", 0.0))
+                    / 5.0
+                    * 10.0,  # Convert 5-scale to 10-scale
+                    release_name=item.get("release_site", ""),
+                    download_url=download_url,
+                    file_size=int(item.get("size", 0)),
+                    source="assrt",
+                )
+
+                subtitles.append(subtitle)
+
+            # Sort by download count and rating
+            subtitles.sort(key=lambda x: (x.download_count, x.rating), reverse=True)
+            return subtitles
+
+        except Exception as e:
+            raise RuntimeError(f"ASSRT search failed: {e}")
+
+    def _map_language(self, assrt_lang: str) -> str:
+        """Map ASSRT language codes to standard codes"""
+        lang_mapping = {
+            "简体中文": "zh-cn",
+            "繁體中文": "zh-tw",
+            "English": "en",
+            "English(US)": "en",
+            "English(UK)": "en-gb",
+            "日本語": "ja",
+            "한국어": "ko",
+            "Français": "fr",
+            "Deutsch": "de",
+            "Español": "es",
+            "Português": "pt",
+            "Italiano": "it",
+            "русский": "ru",
+        }
+        return lang_mapping.get(assrt_lang, assrt_lang.lower())
+
+    async def download_subtitle(
+        self, subtitle: SubtitleInfo, output_path: Path
+    ) -> bool:
+        """Download subtitle file"""
+        if not self._client:
+            raise RuntimeError("Client not initialized")
+
+        if not subtitle.download_url:
+            raise ValueError("No download URL available")
+
+        try:
+            # Download the file directly using the URL from detail API
+            async with httpx.AsyncClient() as download_client:
+                file_response = await download_client.get(subtitle.download_url)
+                file_response.raise_for_status()
+
+                # Create output directory if needed
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+
+                # Write file
+                with open(output_path, "wb") as f:
+                    f.write(file_response.content)
+
+                return True
+
+        except Exception as e:
+            raise RuntimeError(f"ASSRT download failed: {e}")
+
+
 class SubtitleService:
     """High-level subtitle service"""
 
     def __init__(self, config: Config):
         self.config = config
-        self.api = OpenSubtitlesAPI(config)
+        self.opensubtitles_api = OpenSubtitlesAPI(config)
+        self.assrt_api = AssrtAPI(config)
 
     @staticmethod
     def calculate_file_hash(file_path: str) -> Optional[str]:
@@ -287,30 +445,67 @@ class SubtitleService:
         )
 
     async def search_for_video(
-        self, video_path: str, video_size: int
+        self, video_path: str, video_size: int, providers: Optional[List[str]] = None
     ) -> List[SubtitleInfo]:
-        """Search subtitles for a specific video file"""
-        async with self.api:
-            # Try different search strategies in order of preference
+        """Search subtitles for a specific video file using multiple providers"""
+        if providers is None:
+            providers = ["assrt", "opensubtitles"]
 
-            # 1. Hash-based search (most accurate)
-            file_hash = self.calculate_file_hash(video_path)
-            if file_hash:
-                results = await self.api.search_subtitles(
-                    file_hash=file_hash, file_size=video_size
-                )
-                if results:
-                    return results
+        all_results = []
+        filename = Path(video_path).name
+        title = self.extract_title_from_filename(filename)
 
-            # 2. Filename-based search
-            filename = Path(video_path).name
-            title = self.extract_title_from_filename(filename)
-            if title:
-                results = await self.api.search_subtitles(query=title)
-                if results:
-                    return results
+        # Try ASSRT first (text search, good for Chinese content)
+        if "assrt" in providers and self.config.assrt.api_token and title:
+            try:
+                async with self.assrt_api:
+                    results = await self.assrt_api.search_subtitles(
+                        query=title, languages=self.config.subtitles.languages
+                    )
+                    if results:
+                        all_results.extend(results)
+            except Exception as e:
+                # Log error but continue
+                print(f"ASSRT search failed: {e}")
 
-            return []
+        # Try OpenSubtitles (supports hash-based search)
+        if "opensubtitles" in providers and self.config.opensubtitles.api_key:
+            try:
+                async with self.opensubtitles_api:
+                    # 1. Hash-based search (most accurate)
+                    file_hash = self.calculate_file_hash(video_path)
+                    if file_hash:
+                        results = await self.opensubtitles_api.search_subtitles(
+                            file_hash=file_hash, file_size=video_size
+                        )
+                        if results:
+                            all_results.extend(results)
+
+                    # 2. Filename-based search if no hash results from OpenSubtitles
+                    if title and not any(
+                        r.source == "opensubtitles" for r in all_results
+                    ):
+                        results = await self.opensubtitles_api.search_subtitles(
+                            query=title
+                        )
+                        if results:
+                            all_results.extend(results)
+            except Exception as e:
+                # Log error but continue with other providers
+                print(f"OpenSubtitles search failed: {e}")
+
+        # Remove duplicates and sort by quality
+        seen = set()
+        unique_results = []
+        for result in all_results:
+            key = (result.language, result.filename, result.file_size)
+            if key not in seen:
+                seen.add(key)
+                unique_results.append(result)
+
+        # Sort by download count and rating
+        unique_results.sort(key=lambda x: (x.download_count, x.rating), reverse=True)
+        return unique_results
 
     async def download_best_subtitle(
         self, video_path: str, video_size: int, output_dir: Optional[str] = None
@@ -353,11 +548,35 @@ class SubtitleService:
 
         full_output_path = output_path / subtitle_filename
 
-        # Download subtitle
-        async with self.api:
-            success = await self.api.download_subtitle(best_subtitle, full_output_path)
+        # Determine which API to use based on source
+        success = await self._download_subtitle_with_provider(
+            best_subtitle, full_output_path
+        )
 
-            if success:
-                return full_output_path
+        if success:
+            return full_output_path
 
         return None
+
+    async def _download_subtitle_with_provider(
+        self, subtitle: SubtitleInfo, output_path: Path
+    ) -> bool:
+        """Download subtitle using the appropriate provider"""
+        # Determine provider from source field
+        if subtitle.source == "assrt":
+            try:
+                async with self.assrt_api:
+                    return await self.assrt_api.download_subtitle(subtitle, output_path)
+            except Exception as e:
+                print(f"ASSRT download failed: {e}")
+                return False
+        else:
+            # Default to OpenSubtitles
+            try:
+                async with self.opensubtitles_api:
+                    return await self.opensubtitles_api.download_subtitle(
+                        subtitle, output_path
+                    )
+            except Exception as e:
+                print(f"OpenSubtitles download failed: {e}")
+                return False

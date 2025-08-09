@@ -32,8 +32,14 @@ def subtitles():
     "--language", "-l", multiple=True, help="Language codes (e.g., zh-cn, en)"
 )
 @click.option("--limit", default=10, help="Maximum number of results")
+@click.option(
+    "--provider",
+    multiple=True,
+    type=click.Choice(["assrt", "opensubtitles"]),
+    help="Subtitle providers to use (can be specified multiple times)",
+)
 @click.pass_context
-def search(ctx, query, language, limit):
+def search(ctx, query, language, limit, provider):
     """Search for subtitles by movie/show name"""
     try:
         config = Config.load(ctx.obj.get("config_file"))
@@ -47,13 +53,48 @@ def search(ctx, query, language, limit):
         # Override languages if provided
         search_languages = list(language) if language else config.subtitles.languages
 
+        # Override providers if provided
+        search_providers = list(provider) if provider else ["assrt", "opensubtitles"]
+
         async def search_subtitles():
             service = SubtitleService(config)
-            async with service.api:
-                results = await service.api.search_subtitles(
-                    query=query, languages=search_languages
-                )
-                return results[:limit]
+            # Use the new multi-provider search_for_video method with a dummy video path
+            # For pure text search, we'll use the individual APIs
+            results = []
+
+            if "assrt" in search_providers and config.assrt.api_token:
+                try:
+                    async with service.assrt_api:
+                        assrt_results = await service.assrt_api.search_subtitles(
+                            query=query, languages=search_languages
+                        )
+                        results.extend(assrt_results)
+                except Exception as e:
+                    console.print(f"[yellow]ASSRT search failed: {e}[/yellow]")
+
+            if "opensubtitles" in search_providers and config.opensubtitles.api_key:
+                try:
+                    async with service.opensubtitles_api:
+                        os_results = await service.opensubtitles_api.search_subtitles(
+                            query=query, languages=search_languages
+                        )
+                        results.extend(os_results)
+                except Exception as e:
+                    console.print(f"[yellow]OpenSubtitles search failed: {e}[/yellow]")
+
+            # Remove duplicates and sort
+            seen = set()
+            unique_results = []
+            for result in results:
+                key = (result.language, result.filename, result.file_size)
+                if key not in seen:
+                    seen.add(key)
+                    unique_results.append(result)
+
+            unique_results.sort(
+                key=lambda x: (x.download_count, x.rating), reverse=True
+            )
+            return unique_results[:limit]
 
         with console.status(f"[bold green]Searching for '{query}'..."):
             results = asyncio.run(search_subtitles())
@@ -65,6 +106,7 @@ def search(ctx, query, language, limit):
         console.print(f"\n[green]Found {len(results)} subtitles for '{query}':[/green]")
 
         table = Table()
+        table.add_column("Source", style="bright_blue")
         table.add_column("Language", style="cyan")
         table.add_column("Filename", style="magenta")
         table.add_column("Downloads", justify="right")
@@ -74,6 +116,7 @@ def search(ctx, query, language, limit):
 
         for subtitle in results:
             table.add_row(
+                subtitle.source.upper(),
                 subtitle.language,
                 subtitle.filename,
                 str(subtitle.download_count),
@@ -96,8 +139,14 @@ def search(ctx, query, language, limit):
 @click.option("--language", "-l", multiple=True, help="Language codes")
 @click.option("--output-dir", "-o", help="Output directory for subtitle files")
 @click.option("--dry-run", is_flag=True, help="Preview what would be downloaded")
+@click.option(
+    "--provider",
+    multiple=True,
+    type=click.Choice(["assrt", "opensubtitles"]),
+    help="Subtitle providers to use (can be specified multiple times)",
+)
 @click.pass_context
-def download(ctx, video_path, language, output_dir, dry_run):
+def download(ctx, video_path, language, output_dir, dry_run, provider):
     """Download subtitles for a specific video file"""
     try:
         config = Config.load(ctx.obj.get("config_file"))
@@ -145,12 +194,17 @@ def download(ctx, video_path, language, output_dir, dry_run):
         # Override languages if provided
         search_languages = list(language) if language else config.subtitles.languages
 
+        # Override providers if provided
+        search_providers = list(provider) if provider else ["assrt", "opensubtitles"]
+
         async def download_subtitle():
             service = SubtitleService(config)
 
             # Search for subtitles
             console.print("[bold blue]Searching for subtitles...[/bold blue]")
-            subtitles = await service.search_for_video(video_path, video_size)
+            subtitles = await service.search_for_video(
+                video_path, video_size, search_providers
+            )
 
             if not subtitles:
                 console.print("[yellow]No subtitles found[/yellow]")
@@ -171,6 +225,7 @@ def download(ctx, video_path, language, output_dir, dry_run):
             if dry_run:
                 console.print("\n[bold]Would download:[/bold]")
                 table = Table()
+                table.add_column("Source", style="bright_blue")
                 table.add_column("Language")
                 table.add_column("Filename")
                 table.add_column("Downloads", justify="right")
@@ -178,6 +233,7 @@ def download(ctx, video_path, language, output_dir, dry_run):
 
                 for subtitle in filtered_subtitles[: len(search_languages)]:
                     table.add_row(
+                        subtitle.source.upper(),
                         subtitle.language,
                         subtitle.filename,
                         str(subtitle.download_count),

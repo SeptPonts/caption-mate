@@ -53,6 +53,12 @@ def init(ctx, overwrite):
         if password:
             cfg.opensubtitles.password = password
 
+    # ASSRT configuration
+    console.print("\n[bold]ASSRT Configuration[/bold]")
+    assrt_token = Prompt.ask("ASSRT API Token (optional)", default="")
+    if assrt_token:
+        cfg.assrt.api_token = assrt_token
+
     # NAS configuration
     console.print("\n[bold]NAS Configuration[/bold]")
     protocol = Prompt.ask("NAS Protocol", choices=["smb", "nfs", "sftp"], default="smb")
@@ -157,6 +163,15 @@ def show(ctx, key):
             "password",
             "***" if cfg.opensubtitles.password else "[dim]not set[/dim]",
         )
+
+        # ASSRT
+        table.add_row(
+            "assrt",
+            "api_token",
+            "***" if cfg.assrt.api_token else "[dim]not set[/dim]",
+        )
+        table.add_row("", "base_url", cfg.assrt.base_url)
+        table.add_row("", "user_agent", cfg.assrt.user_agent)
 
         # NAS
         table.add_row("nas", "protocol", cfg.nas.protocol)

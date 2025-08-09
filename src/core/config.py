@@ -14,6 +14,13 @@ class OpenSubtitlesConfig:
 
 
 @dataclass
+class AssrtConfig:
+    api_token: Optional[str] = None
+    base_url: str = "https://api.assrt.net"
+    user_agent: str = "caption-mate-v1.0"
+
+
+@dataclass
 class NASConfig:
     protocol: str = "smb"
     host: Optional[str] = None
@@ -53,6 +60,7 @@ class ScanningConfig:
 @dataclass
 class Config:
     opensubtitles: OpenSubtitlesConfig = field(default_factory=OpenSubtitlesConfig)
+    assrt: AssrtConfig = field(default_factory=AssrtConfig)
     nas: NASConfig = field(default_factory=NASConfig)
     subtitles: SubtitlesConfig = field(default_factory=SubtitlesConfig)
     scanning: ScanningConfig = field(default_factory=ScanningConfig)
@@ -79,6 +87,7 @@ class Config:
 
             return cls(
                 opensubtitles=OpenSubtitlesConfig(**data.get("opensubtitles", {})),
+                assrt=AssrtConfig(**data.get("assrt", {})),
                 nas=NASConfig(**data.get("nas", {})),
                 subtitles=SubtitlesConfig(**data.get("subtitles", {})),
                 scanning=ScanningConfig(**data.get("scanning", {})),
@@ -102,6 +111,11 @@ class Config:
                 "user_agent": self.opensubtitles.user_agent,
                 "username": self.opensubtitles.username,
                 "password": self.opensubtitles.password,
+            },
+            "assrt": {
+                "api_token": self.assrt.api_token,
+                "base_url": self.assrt.base_url,
+                "user_agent": self.assrt.user_agent,
             },
             "nas": {
                 "protocol": self.nas.protocol,
