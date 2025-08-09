@@ -109,7 +109,8 @@ def download(ctx, video_path, language, output_dir, dry_run):
             raise click.Abort()
 
         # Determine if it's a NAS path or local path
-        is_nas_path = video_path.startswith("/")
+        # is_nas_path = video_path.startswith("/")
+        is_nas_path = True
 
         if is_nas_path:
             # NAS path - need to connect to NAS to get file info

@@ -109,7 +109,7 @@ class NASClient:
 
         parts = path.split("/", 1)
         share_name = parts[0]
-        dir_path = "/" + parts[1] if len(parts) > 1 else "/"
+        dir_path = parts[1] if len(parts) > 1 else "/"
 
         return share_name, dir_path
 

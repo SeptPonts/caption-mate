@@ -117,11 +117,11 @@ def auto(ctx, path, recursive, dry_run, output_dir):
             table.add_column("Size", justify="right")
             table.add_column("Path", style="dim")
 
-            for video_file in video_files[:10]:  # Show first 10
+            for video_file in video_files[:30]:  # Show first 30
                 table.add_row(video_file.name, video_file.size_human, video_file.path)
 
-            if len(video_files) > 10:
-                table.add_row("...", f"and {len(video_files) - 10} more", "...")
+            if len(video_files) > 30:
+                table.add_row("...", f"and {len(video_files) - 30} more", "...")
 
             console.print(table)
 
