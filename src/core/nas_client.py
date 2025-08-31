@@ -113,6 +113,23 @@ class NASClient:
 
         return share_name, dir_path
 
+    def _parse_file_path(self, file_path: str) -> tuple[str, str]:
+        """Parse file path into share name and file path relative to share"""
+        path = file_path.strip("/")
+        if not path:
+            raise ValueError("File path must specify a share and file")
+
+        parts = path.split("/", 1)
+        share_name = parts[0]
+
+        if len(parts) < 2:
+            raise ValueError("File path must include filename")
+
+        # For files, we need the full path relative to share (including filename)
+        relative_path = parts[1]
+
+        return share_name, relative_path
+
     def list_directory(
         self, path: str, pattern: Optional[str] = None
     ) -> List[FileEntry]:
@@ -269,3 +286,24 @@ class NASClient:
 
         except Exception as e:
             raise OSError(f"Failed to scan video files in {path}: {e}")
+
+    def rename_file(self, old_path: str, new_path: str) -> bool:
+        """Rename a file on the NAS"""
+        try:
+            if not self._connection:
+                raise RuntimeError("Not connected to NAS")
+
+            # Parse file paths correctly
+            old_share, old_file_path = self._parse_file_path(old_path)
+            new_share, new_file_path = self._parse_file_path(new_path)
+
+            # Must be in the same share
+            if old_share != new_share:
+                raise ValueError("Cannot rename across different shares")
+
+            # Use SMB rename operation with correct file paths
+            self._connection.rename(old_share, old_file_path, new_file_path)
+            return True
+
+        except Exception as e:
+            raise OSError(f"Failed to rename {old_path} to {new_path}: {e}")

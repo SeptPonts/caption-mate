@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any, Dict
 
 import click
@@ -7,6 +8,9 @@ from rich.tree import Tree
 
 from ...core.config import Config
 from ...core.nas_client import NASClient
+from ...core.subtitle_matcher import SubtitleMatcher
+from ...models.subtitle import SubtitleFile
+from ...models.video import VideoFile
 
 console = Console()
 
@@ -311,3 +315,250 @@ def list(ctx):
     """List previously scanned video files (placeholder for future caching)"""
     console.print("[yellow]Feature not yet implemented[/yellow]")
     console.print("This will show cached scan results in a future version")
+
+
+def _load_and_validate_config(ctx):
+    """Load and validate configuration"""
+    config = Config.load(ctx.obj.get("config_file"))
+    errors = config.validate()
+    if errors:
+        console.print("[red]Configuration errors found. Run 'config init' first.[/red]")
+        raise click.Abort()
+    return config
+
+
+def _detect_language_from_filename(filename: str, config) -> str:
+    """Detect language from subtitle filename"""
+    name = filename.lower()
+
+    # Common language patterns
+    language_patterns = {
+        "zh-cn": [".zh.", ".chi.", ".chs.", ".chinese.", "chinese", ".中文.", ".简体."],
+        "zh-tw": [".cht.", ".繁体.", ".traditional."],
+        "en": [".en.", ".eng.", ".english.", "english"],
+        "ja": [".jp.", ".jpn.", ".japanese.", "japanese"],
+        "ko": [".ko.", ".kor.", ".korean.", "korean"],
+        "fr": [".fr.", ".fre.", ".french.", "french"],
+        "de": [".de.", ".ger.", ".german.", "german"],
+        "es": [".es.", ".spa.", ".spanish.", "spanish"],
+        "pt": [".pt.", ".por.", ".portuguese.", "portuguese"],
+        "ru": [".ru.", ".rus.", ".russian.", "russian"],
+    }
+
+    # Check for language patterns in filename
+    for lang_code, patterns in language_patterns.items():
+        if any(pattern in name for pattern in patterns):
+            return lang_code
+
+    # If no pattern found, use first preferred language from config
+    if config.subtitles.languages:
+        return config.subtitles.languages[0]
+
+    # Final fallback
+    return "zh-cn"
+
+
+def _scan_directory_for_files(nas_client, path, config):
+    """Scan directory and separate video and subtitle files"""
+    if not nas_client.path_exists(path):
+        console.print(f"[red]Error:[/red] Path '{path}' does not exist")
+        raise click.Abort()
+
+    all_entries = nas_client.list_directory(path)
+    video_extensions = set(config.scanning.video_extensions)
+    subtitle_extensions = {".srt", ".ass", ".ssa", ".vtt", ".sub"}
+
+    video_files = []
+    subtitle_files = []
+
+    for entry in all_entries:
+        if entry.is_dir:
+            continue
+
+        file_ext = Path(entry.name).suffix.lower()
+        if file_ext in video_extensions:
+            video_file = VideoFile(
+                filename=entry.name,
+                file_path=entry.path,
+                file_size=entry.size,
+                nas_path=entry.path,
+                modified_time=entry.modified_time,
+            )
+            video_files.append(video_file)
+        elif file_ext in subtitle_extensions:
+            detected_language = _detect_language_from_filename(entry.name, config)
+            subtitle_file = SubtitleFile(
+                filename=entry.name,
+                file_path=entry.path,
+                language=detected_language,
+                format=file_ext.lstrip("."),
+                video_filename="",
+                file_size=entry.size,
+            )
+            subtitle_files.append(subtitle_file)
+
+    return video_files, subtitle_files
+
+
+def _perform_matching(video_files, subtitle_files, threshold):
+    """Perform matching and return rename operations"""
+    matcher = SubtitleMatcher(similarity_threshold=threshold)
+    match_results = matcher.match_directory(video_files, subtitle_files)
+    successful_matches = [result for result in match_results if result.has_match]
+
+    if not successful_matches:
+        return []
+
+    return matcher.plan_rename_operations(successful_matches, "")
+
+
+def _display_match_results(rename_operations, config, path, force):
+    """Display match results in a table"""
+    console.print(f"\n[green]Found {len(rename_operations)} matches:[/green]")
+
+    table = Table()
+    table.add_column("Video File", style="cyan")
+    table.add_column("Subtitle File", style="magenta")
+    table.add_column("Confidence", justify="center")
+    table.add_column("New Name", style="yellow")
+    table.add_column("Action", justify="center")
+
+    for operation in rename_operations:
+        confidence_color = (
+            "green"
+            if operation.confidence >= 0.95
+            else "yellow"
+            if operation.confidence >= 0.8
+            else "red"
+        )
+
+        action = "✓ Rename" if operation.needs_rename else "- Skip"
+        if not force and operation.needs_rename:
+            target_path = str(Path(path) / operation.new_name)
+            with NASClient(config) as nas_client:
+                if nas_client.path_exists(target_path):
+                    action = "! Exists"
+
+        table.add_row(
+            operation.target_video.filename,
+            operation.old_name,
+            f"[{confidence_color}]{operation.confidence:.2f}[/{confidence_color}]",
+            operation.new_name,
+            action,
+        )
+
+    console.print(table)
+
+
+def _execute_rename_operations(rename_operations, config, path, force):
+    """Execute rename operations and return results"""
+    results = {"renamed": 0, "skipped": 0, "errors": 0}
+
+    with NASClient(config) as nas_client:
+        for operation in rename_operations:
+            if not operation.needs_rename:
+                results["skipped"] += 1
+                continue
+
+            old_path = operation.subtitle_file.file_path
+            new_path = str(Path(path) / operation.new_name)
+
+            if nas_client.path_exists(new_path) and not force:
+                console.print(
+                    f"[yellow]Skipping {operation.new_name}: file exists[/yellow]"
+                )
+                results["skipped"] += 1
+                continue
+
+            try:
+                success = nas_client.rename_file(old_path, new_path)
+                if success:
+                    results["renamed"] += 1
+                    console.print(
+                        f"[green]✓[/green] Renamed: {operation.old_name} → "
+                        f"{operation.new_name}"
+                    )
+                else:
+                    results["errors"] += 1
+                    console.print(
+                        f"[red]✗[/red] Failed to rename: {operation.old_name}"
+                    )
+            except Exception as e:
+                results["errors"] += 1
+                console.print(f"[red]✗[/red] Error renaming {operation.old_name}: {e}")
+
+    return results
+
+
+def _display_summary(results):
+    """Display execution summary"""
+    console.print("\n[bold]Summary:[/bold]")
+    console.print(f"[green]✓ Renamed: {results['renamed']}[/green]")
+    console.print(f"[yellow]- Skipped: {results['skipped']}[/yellow]")
+    console.print(f"[red]✗ Errors: {results['errors']}[/red]")
+
+
+@nas.command()
+@click.argument("path")
+@click.option("--dry-run", is_flag=True, help="Preview matches without renaming")
+@click.option("--force", is_flag=True, help="Overwrite existing subtitles")
+@click.option("--threshold", default=0.8, help="Similarity threshold (0.0-1.0)")
+@click.pass_context
+def match(ctx, path, dry_run, force, threshold):
+    """Match and rename subtitle files to video files in NAS directory"""
+    try:
+        # Load and validate configuration
+        config = _load_and_validate_config(ctx)
+
+        console.print(f"[bold blue]Matching subtitles in: {path}[/bold blue]")
+        console.print(f"Similarity threshold: {threshold}")
+        console.print(f"Mode: {'Preview' if dry_run else 'Execute'}")
+
+        # Scan directory for files
+        with console.status("[bold green]Scanning directory..."):
+            with NASClient(config) as nas_client:
+                video_files, subtitle_files = _scan_directory_for_files(
+                    nas_client, path, config
+                )
+
+        # Check if we have files to work with
+        if not video_files:
+            console.print(f"[yellow]No video files found in {path}[/yellow]")
+            return
+
+        if not subtitle_files:
+            console.print(f"[yellow]No subtitle files found in {path}[/yellow]")
+            return
+
+        console.print(
+            f"Found {len(video_files)} video files and "
+            f"{len(subtitle_files)} subtitle files"
+        )
+
+        # Perform matching
+        with console.status("[bold green]Matching files..."):
+            rename_operations = _perform_matching(
+                video_files, subtitle_files, threshold
+            )
+
+        if not rename_operations:
+            console.print("[yellow]No matches found above threshold[/yellow]")
+            return
+
+        # Display results
+        _display_match_results(rename_operations, config, path, force)
+
+        if dry_run:
+            console.print("\n[bold]Dry run mode - no files were renamed[/bold]")
+            return
+
+        # Execute rename operations
+        with console.status("[bold green]Renaming files..."):
+            results = _execute_rename_operations(rename_operations, config, path, force)
+
+        # Show summary
+        _display_summary(results)
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise click.Abort()
