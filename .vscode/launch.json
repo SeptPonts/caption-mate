@@ -1,3 +1,52 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:82a3c0a6dd5f4bc514cb7047f9c6a744823650d461958d1919131150d49170b8
-size 1344
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "cwd": "${workspaceFolder}",
+            "python": "${workspaceFolder}/.venv/bin/python"
+        },
+        {
+            "name": "Debug caption-mate auto",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "src.main",
+            "args": [
+                "auto", 
+                "sata11-156XXXX6325/TV Series/Euphoria",
+                "--dry-run"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "envFile": "${workspaceFolder}/.env",
+            "python": "${workspaceFolder}/.venv/bin/python",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+            }
+        },
+        {
+            "name": "Debug caption-mate subtitles download",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "src.main",
+            "args": [
+                "subtitles",
+                "download",
+                "sata11-156XXXX6325/TV Series/Euphoria/Euphoria Season 1 Mp4 1080p/Euphoria S01E01.mp4",
+                "--dry-run"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "envFile": "${workspaceFolder}/.env",
+            "python": "${workspaceFolder}/.venv/bin/python",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        }
+    ],
+}
