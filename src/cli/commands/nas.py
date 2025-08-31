@@ -400,10 +400,22 @@ def _scan_directory_for_files(nas_client, path, config):
     return video_files, subtitle_files
 
 
-def _perform_matching(video_files, subtitle_files, threshold):
+def _perform_matching(video_files, subtitle_files, threshold, mode="regex"):
     """Perform matching and return rename operations"""
-    matcher = SubtitleMatcher(similarity_threshold=threshold)
+    matcher = SubtitleMatcher(similarity_threshold=threshold, mode=mode)
     match_results = matcher.match_directory(video_files, subtitle_files)
+    successful_matches = [result for result in match_results if result.has_match]
+
+    if not successful_matches:
+        return []
+
+    return matcher.plan_rename_operations(successful_matches, "")
+
+
+async def _perform_matching_async(video_files, subtitle_files, threshold, mode="ai"):
+    """Async version supporting AI matching"""
+    matcher = SubtitleMatcher(similarity_threshold=threshold, mode=mode)
+    match_results = await matcher.match_directory_async(video_files, subtitle_files)
     successful_matches = [result for result in match_results if result.has_match]
 
     if not successful_matches:
@@ -503,8 +515,11 @@ def _display_summary(results):
 @click.option("--dry-run", is_flag=True, help="Preview matches without renaming")
 @click.option("--force", is_flag=True, help="Overwrite existing subtitles")
 @click.option("--threshold", default=0.8, help="Similarity threshold (0.0-1.0)")
+@click.option(
+    "--mode", default="ai", type=click.Choice(["regex", "ai"]), help="Matching mode"
+)
 @click.pass_context
-def match(ctx, path, dry_run, force, threshold):
+def match(ctx, path, dry_run, force, threshold, mode):
     """Match and rename subtitle files to video files in NAS directory"""
     try:
         # Load and validate configuration
@@ -512,6 +527,7 @@ def match(ctx, path, dry_run, force, threshold):
 
         console.print(f"[bold blue]Matching subtitles in: {path}[/bold blue]")
         console.print(f"Similarity threshold: {threshold}")
+        console.print(f"Matching mode: {mode}")
         console.print(f"Mode: {'Preview' if dry_run else 'Execute'}")
 
         # Scan directory for files
@@ -535,11 +551,22 @@ def match(ctx, path, dry_run, force, threshold):
             f"{len(subtitle_files)} subtitle files"
         )
 
-        # Perform matching
-        with console.status("[bold green]Matching files..."):
-            rename_operations = _perform_matching(
-                video_files, subtitle_files, threshold
-            )
+        # Perform matching with mode-specific status
+        if mode == "ai":
+            status_msg = "[bold blue]Calling AI model (this may take a while)..."
+            with console.status(status_msg):
+                import asyncio
+
+                rename_operations = asyncio.run(
+                    _perform_matching_async(
+                        video_files, subtitle_files, threshold, mode
+                    )
+                )
+        else:
+            with console.status("[bold green]Matching files..."):
+                rename_operations = _perform_matching(
+                    video_files, subtitle_files, threshold, mode
+                )
 
         if not rename_operations:
             console.print("[yellow]No matches found above threshold[/yellow]")
@@ -551,6 +578,16 @@ def match(ctx, path, dry_run, force, threshold):
         if dry_run:
             console.print("\n[bold]Dry run mode - no files were renamed[/bold]")
             return
+
+        # Get user confirmation before proceeding
+        operations_count = len([op for op in rename_operations if op.needs_rename])
+        if operations_count > 0:
+            console.print(
+                f"\n[yellow]About to rename {operations_count} file(s).[/yellow]"
+            )
+            if not click.confirm("Do you want to proceed with the rename operations?"):
+                console.print("[blue]Operation cancelled by user.[/blue]")
+                return
 
         # Execute rename operations
         with console.status("[bold green]Renaming files..."):

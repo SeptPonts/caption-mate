@@ -20,9 +20,34 @@ def extract_match_count(output_lines):
     return 0
 
 
-def test_match_integration():
+def detect_ai_errors(output_lines):
+    """检测AI模式特有的错误"""
+    errors = []
+    for line in output_lines:
+        if "API" in line and "error" in line.lower():
+            errors.append("API error detected")
+        elif "timeout" in line.lower() and "ai" in line.lower():
+            errors.append("AI timeout error")
+        elif "deepseek" in line.lower() and "error" in line.lower():
+            errors.append("DeepSeek API error")
+        elif "json" in line.lower() and "decode" in line.lower():
+            errors.append("JSON parsing error")
+    return errors
+
+
+def test_match_integration_ai():
+    """专门测试AI模式的集成测试"""
+    return test_match_integration(mode="ai")
+
+
+def test_match_click_ai():
+    """专门测试AI模式的Click测试"""
+    return test_match_click(mode="ai")
+
+
+def test_match_integration(mode="regex"):
     """通过subprocess调用真实命令 - 最真实的测试"""
-    print("Running integration test...")
+    print(f"Running integration test (mode: {mode})...")
 
     test_path = (
         "sata11-156XXXX6325/TV Series/The Man in the High Castle/"
@@ -39,12 +64,14 @@ def test_match_integration():
         test_path,
         "--dry-run",
         "--threshold=0.01",
+        f"--mode={mode}",
     ]
 
     print(f"Executing: {' '.join(cmd)}")
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        timeout = 240 if mode == "ai" else 120
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
 
         print(f"Return code: {result.returncode}")
         print(f"STDOUT:\n{result.stdout}")
@@ -67,24 +94,30 @@ def test_match_integration():
         else:
             print("- No matches found (this might be expected)")
 
+        # 检测AI模式特有错误
+        ai_errors = detect_ai_errors(lines) if mode == "ai" else []
+
         return {
             "success": result.returncode == 0,
             "match_count": match_count,
             "output": result.stdout,
             "error": result.stderr,
+            "mode": mode,
+            "ai_errors": ai_errors,
         }
 
     except subprocess.TimeoutExpired:
-        print("✗ Command timed out after 120 seconds")
+        timeout_msg = "240 seconds" if mode == "ai" else "120 seconds"
+        print(f"✗ Command timed out after {timeout_msg}")
         return {"success": False, "error": "Timeout"}
     except Exception as e:
         print(f"✗ Exception occurred: {e}")
         return {"success": False, "error": str(e)}
 
 
-def test_match_click():
+def test_match_click(mode="regex"):
     """使用Click的CliRunner - 更快，更可控"""
-    print("Running Click test...")
+    print(f"Running Click test (mode: {mode})...")
 
     try:
         from click.testing import CliRunner
@@ -99,7 +132,15 @@ def test_match_click():
 
         # 执行命令
         result = runner.invoke(
-            cli_main, ["nas", "match", test_path, "--dry-run", "--threshold=0.01"]
+            cli_main,
+            [
+                "nas",
+                "match",
+                test_path,
+                "--dry-run",
+                "--threshold=0.01",
+                f"--mode={mode}",
+            ],
         )
 
         print(f"Exit code: {result.exit_code}")
@@ -125,11 +166,16 @@ def test_match_click():
         else:
             print("- No matches found (this might be expected)")
 
+        # 检测AI模式特有错误
+        ai_errors = detect_ai_errors(lines) if mode == "ai" else []
+
         return {
             "success": result.exit_code == 0,
             "match_count": match_count,
             "output": result.output,
             "exception": result.exception,
+            "mode": mode,
+            "ai_errors": ai_errors,
         }
 
     except ImportError as e:
@@ -140,46 +186,88 @@ def test_match_click():
         return {"success": False, "error": str(e)}
 
 
-def main():
-    """运行两种测试并对比结果"""
+def run_comprehensive_tests():
+    """运行全面的测试，包括两种模式"""
     print("=== Caption-Mate Match Command Test ===\n")
 
-    # 运行集成测试
-    print("=== Integration Test (subprocess) ===")
-    integration_result = test_match_integration()
+    results = {}
 
-    print("\n" + "=" * 50 + "\n")
+    # 运行Regex模式测试
+    print("=== Regex Mode Tests ===")
+    print("--- Integration Test (subprocess) ---")
+    results["regex_integration"] = test_match_integration(mode="regex")
 
-    # 运行Click测试
-    print("=== Click Test (CliRunner) ===")
-    click_result = test_match_click()
+    print("\n--- Click Test (CliRunner) ---")
+    results["regex_click"] = test_match_click(mode="regex")
 
-    print("\n" + "=" * 50 + "\n")
+    print("\n" + "=" * 60 + "\n")
+
+    # 运行AI模式测试
+    print("=== AI Mode Tests ===")
+    print("--- Integration Test (subprocess) ---")
+    results["ai_integration"] = test_match_integration(mode="ai")
+
+    print("\n--- Click Test (CliRunner) ---")
+    results["ai_click"] = test_match_click(mode="ai")
+
+    print("\n" + "=" * 60 + "\n")
 
     # 结果对比
-    print("=== Test Results Summary ===")
-
-    print(f"Integration test success: {integration_result.get('success', False)}")
-    print(f"Click test success: {click_result.get('success', False)}")
-
-    integration_matches = integration_result.get("match_count", 0)
-    click_matches = click_result.get("match_count", 0)
-
-    print(f"Integration test matches: {integration_matches}")
-    print(f"Click test matches: {click_matches}")
-
-    # 一致性检查
-    if integration_result.get("success") and click_result.get("success"):
-        if integration_matches == click_matches:
-            print("✓ Both tests produced consistent results")
-        else:
-            print("⚠ Tests produced different match counts")
-    else:
-        print("- Cannot compare results due to test failures")
+    print("=== Comprehensive Test Results Summary ===")
+    _display_test_summary(results)
 
     print("\n=== Test Complete ===")
+    return results
+
+
+def _display_test_summary(results):
+    """显示测试结果摘要"""
+    print("\n--- Success Status ---")
+    for test_name, result in results.items():
+        success = result.get("success", False)
+        status = "✓" if success else "✗"
+        mode = result.get("mode", "unknown")
+        print(
+            f"{status} {test_name.replace('_', ' ').title()}: {success} (mode: {mode})"
+        )
+
+    print("\n--- Match Counts ---")
+    for test_name, result in results.items():
+        count = result.get("match_count", 0)
+        mode = result.get("mode", "unknown")
+        print(f"  {test_name.replace('_', ' ').title()}: {count} matches")
+
+    print("\n--- AI Mode Error Analysis ---")
+    ai_results = {k: v for k, v in results.items() if "ai" in k}
+    for test_name, result in ai_results.items():
+        ai_errors = result.get("ai_errors", [])
+        if ai_errors:
+            print(f"  {test_name}: {', '.join(ai_errors)}")
+        else:
+            print(f"  {test_name}: No AI-specific errors detected")
+
+    print("\n--- Mode Comparison ---")
+    regex_integration = results.get("regex_integration", {})
+    ai_integration = results.get("ai_integration", {})
+
+    regex_matches = regex_integration.get("match_count", 0)
+    ai_matches = ai_integration.get("match_count", 0)
+
+    if regex_matches == ai_matches:
+        print(f"✓ Both modes found same number of matches: {regex_matches}")
+    elif ai_matches > regex_matches:
+        print(f"⚠ AI mode found more matches: {ai_matches} vs {regex_matches}")
+    else:
+        print(f"⚠ Regex mode found more matches: {regex_matches} vs {ai_matches}")
+
+
+def main():
+    """主函数 - 运行全面测试"""
+    return run_comprehensive_tests()
 
 
 if __name__ == "__main__":
-    # main()
-    test_match_click()
+    # 可以选择运行单个测试或全面测试
+    # main()  # 全面测试
+    # test_match_click()  # 单个regex测试
+    test_match_click_ai()  # 单个AI测试
