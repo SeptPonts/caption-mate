@@ -307,3 +307,106 @@ class NASClient:
 
         except Exception as e:
             raise OSError(f"Failed to rename {old_path} to {new_path}: {e}")
+
+    def create_directory(self, path: str) -> bool:
+        """Create a directory on the NAS"""
+        try:
+            if not self._connection:
+                raise RuntimeError("Not connected to NAS")
+
+            share_name, dir_path = self._parse_path(path)
+            self._connection.createDirectory(share_name, dir_path)
+            return True
+
+        except Exception as e:
+            # Directory might already exist
+            if "STATUS_OBJECT_NAME_COLLISION" in str(e):
+                return True
+            raise OSError(f"Failed to create directory {path}: {e}")
+
+    def upload_file(self, local_path: str, nas_path: str) -> bool:
+        """Upload a local file to NAS"""
+        try:
+            if not self._connection:
+                raise RuntimeError("Not connected to NAS")
+
+            from pathlib import Path as LocalPath
+
+            local_file = LocalPath(local_path)
+            if not local_file.exists():
+                raise FileNotFoundError(f"Local file not found: {local_path}")
+
+            if not local_file.is_file():
+                raise ValueError(f"Not a file: {local_path}")
+
+            # Determine target path
+            if self.is_directory(nas_path):
+                # Upload to directory with same filename
+                target_path = f"{nas_path.rstrip('/')}/{local_file.name}"
+            else:
+                # Use as full path
+                target_path = nas_path
+
+            share_name, file_path = self._parse_file_path(target_path)
+
+            # Ensure parent directory exists
+            parent_dir = "/".join(file_path.split("/")[:-1])
+            if parent_dir:
+                try:
+                    parent_path = f"/{share_name}/{parent_dir}"
+                    if not self.path_exists(parent_path):
+                        self.create_directory(parent_path)
+                except Exception:
+                    pass  # Directory might exist or creation failed
+
+            # Upload file
+            with open(local_file, "rb") as f:
+                self._connection.storeFile(share_name, file_path, f)
+
+            return True
+
+        except Exception as e:
+            raise OSError(f"Failed to upload {local_path} to {nas_path}: {e}")
+
+    def upload_directory(
+        self, local_path: str, nas_path: str, recursive: bool = True
+    ) -> Dict[str, int]:
+        """Upload a local directory to NAS"""
+        try:
+            from pathlib import Path as LocalPath
+
+            local_dir = LocalPath(local_path)
+            if not local_dir.exists():
+                raise FileNotFoundError(f"Local directory not found: {local_path}")
+
+            if not local_dir.is_dir():
+                raise ValueError(f"Not a directory: {local_path}")
+
+            stats = {"uploaded": 0, "skipped": 0, "failed": 0}
+
+            # Ensure target directory exists
+            if not self.path_exists(nas_path):
+                self.create_directory(nas_path)
+
+            # Upload files
+            for item in local_dir.iterdir():
+                if item.is_file():
+                    try:
+                        target = f"{nas_path.rstrip('/')}/{item.name}"
+                        self.upload_file(str(item), target)
+                        stats["uploaded"] += 1
+                    except Exception:
+                        stats["failed"] += 1
+                elif item.is_dir() and recursive:
+                    try:
+                        target = f"{nas_path.rstrip('/')}/{item.name}"
+                        sub_stats = self.upload_directory(str(item), target, recursive)
+                        for key in stats:
+                            stats[key] += sub_stats[key]
+                    except Exception:
+                        stats["failed"] += 1
+
+            return stats
+
+        except Exception as e:
+            raise OSError(f"Failed to upload directory {local_path} to {nas_path}: {e}")

@@ -599,3 +599,149 @@ def match(ctx, path, dry_run, force, threshold, mode):
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
         raise click.Abort()
+
+
+@nas.command()
+@click.argument("local_paths", nargs=-1, required=True, type=click.Path(exists=True))
+@click.argument("nas_path")
+@click.option("--overwrite", is_flag=True, help="Overwrite existing files on NAS")
+@click.option(
+    "--dry-run", is_flag=True, help="Preview upload without transferring files"
+)
+@click.pass_context
+def upload(ctx, local_paths, nas_path, overwrite, dry_run):
+    """Upload local files or directories to NAS
+
+    Examples:
+        # Upload single file
+        caption-mate nas upload /local/subtitle.srt /Movies/
+
+        # Upload multiple files
+        caption-mate nas upload /local/sub1.srt /local/sub2.ass /Movies/
+
+        # Upload directory
+        caption-mate nas upload /local/subtitles/ /Movies/subtitles/
+
+    Common workflow:
+        1. Upload subtitles to NAS: nas upload /local/subs/ /Movies/
+        2. Match to videos: nas match /Movies/ --mode ai
+    """
+    try:
+        config = _load_and_validate_config(ctx)
+
+        console.print(f"[bold blue]Upload to NAS: {nas_path}[/bold blue]")
+        console.print(f"Mode: {'Preview' if dry_run else 'Execute'}")
+
+        # Check NAS path exists
+        with NASClient(config) as nas_client:
+            if not nas_client.path_exists(nas_path):
+                console.print(f"[yellow]NAS path does not exist: {nas_path}[/yellow]")
+                if click.confirm("Create directory?"):
+                    nas_client.create_directory(nas_path)
+                    console.print(f"[green]✓[/green] Created directory: {nas_path}")
+                else:
+                    raise click.Abort()
+
+        # Collect files to upload
+        from pathlib import Path as LocalPath
+
+        upload_items = []
+        for local_path in local_paths:
+            local = LocalPath(local_path)
+            if local.is_file():
+                upload_items.append(("file", str(local)))
+            elif local.is_dir():
+                upload_items.append(("dir", str(local)))
+
+        if not upload_items:
+            console.print("[yellow]No valid files or directories to upload[/yellow]")
+            return
+
+        # Preview
+        console.print("\n[bold]Items to upload:[/bold]")
+        table = Table()
+        table.add_column("Type", width=10)
+        table.add_column("Local Path", style="cyan")
+        table.add_column("Size", justify="right")
+
+        total_size = 0
+        for item_type, item_path in upload_items:
+            local = LocalPath(item_path)
+            if item_type == "file":
+                size = local.stat().st_size
+                total_size += size
+                size_human = _format_size(size)
+                table.add_row("File", str(local), size_human)
+            else:
+                # Count directory contents
+                file_count = sum(1 for _ in local.rglob("*") if _.is_file())
+                table.add_row("Directory", str(local), f"{file_count} files")
+
+        console.print(table)
+
+        if dry_run:
+            console.print("\n[bold]Dry run mode - no files uploaded[/bold]")
+            return
+
+        # Confirm upload
+        if not click.confirm(f"\nUpload {len(upload_items)} item(s) to {nas_path}?"):
+            console.print("[blue]Upload cancelled[/blue]")
+            return
+
+        # Execute upload
+        stats = {"uploaded": 0, "failed": 0, "skipped": 0}
+
+        with NASClient(config) as nas_client:
+            for item_type, item_path in upload_items:
+                try:
+                    if item_type == "file":
+                        target = f"{nas_path.rstrip('/')}/{LocalPath(item_path).name}"
+
+                        # Check if file exists
+                        if nas_client.path_exists(target) and not overwrite:
+                            console.print(
+                                f"[yellow]Skipping {LocalPath(item_path).name}: "
+                                "file exists[/yellow]"
+                            )
+                            stats["skipped"] += 1
+                            continue
+
+                        nas_client.upload_file(item_path, nas_path)
+                        stats["uploaded"] += 1
+                        console.print(
+                            f"[green]✓[/green] Uploaded: {LocalPath(item_path).name}"
+                        )
+                    else:
+                        dir_stats = nas_client.upload_directory(
+                            item_path, nas_path, True
+                        )
+                        stats["uploaded"] += dir_stats["uploaded"]
+                        stats["failed"] += dir_stats["failed"]
+                        console.print(
+                            f"[green]✓[/green] Uploaded directory: "
+                            f"{LocalPath(item_path).name} "
+                            f"({dir_stats['uploaded']} files)"
+                        )
+
+                except Exception as e:
+                    stats["failed"] += 1
+                    console.print(f"[red]✗[/red] Failed to upload {item_path}: {e}")
+
+        # Summary
+        console.print("\n[bold]Upload Summary:[/bold]")
+        console.print(f"[green]✓ Uploaded: {stats['uploaded']}[/green]")
+        console.print(f"[yellow]- Skipped: {stats['skipped']}[/yellow]")
+        console.print(f"[red]✗ Failed: {stats['failed']}[/red]")
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise click.Abort()
+
+
+def _format_size(size: int) -> str:
+    """Format file size in human readable format"""
+    for unit in ["B", "KB", "MB", "GB"]:
+        if size < 1024.0:
+            return f"{size:.1f}{unit}"
+        size /= 1024.0
+    return f"{size:.1f}TB"

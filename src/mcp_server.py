@@ -129,7 +129,11 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="nas_match",
-            description="Match subtitle files to video files and rename them",
+            description=(
+                "Match subtitle files to video files and rename them. "
+                "If subtitles are on local machine, use nas_upload first to upload "
+                "them to NAS, then run nas_match to pair them with videos."
+            ),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -165,6 +169,41 @@ async def list_tools() -> list[Tool]:
                 "required": ["path"],
             },
         ),
+        Tool(
+            name="nas_upload",
+            description=(
+                "Upload local subtitle files or directories to NAS. "
+                "Common workflow: 1) Upload subtitles to NAS using nas_upload, "
+                "2) Match them to videos using nas_match. "
+                "Supports single files, multiple files, or entire directories."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "local_paths": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "List of local file or directory paths to upload. "
+                            "Can be single file, multiple files, or directories."
+                        ),
+                    },
+                    "nas_path": {
+                        "type": "string",
+                        "description": (
+                            "Target NAS directory path (e.g., '/Movies/Subtitles'). "
+                            "Will be created if it doesn't exist."
+                        ),
+                    },
+                    "overwrite": {
+                        "type": "boolean",
+                        "description": "Overwrite existing files on NAS",
+                        "default": False,
+                    },
+                },
+                "required": ["local_paths", "nas_path"],
+            },
+        ),
     ]
 
 
@@ -182,6 +221,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return await _handle_nas_scan(arguments)
         elif name == "nas_match":
             return await _handle_nas_match(arguments)
+        elif name == "nas_upload":
+            return await _handle_nas_upload(arguments)
         else:
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
     except Exception as e:
@@ -495,6 +536,108 @@ async def _handle_nas_match(arguments: dict) -> list[TextContent]:
                     "needs_rename": operation.needs_rename,
                 }
             )
+
+    return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+
+async def _handle_nas_upload(arguments: dict) -> list[TextContent]:
+    """Handle nas_upload tool."""
+    local_paths = arguments["local_paths"]
+    nas_path = arguments["nas_path"]
+    overwrite = arguments.get("overwrite", False)
+
+    config = _load_config()
+
+    # Validate local paths
+    from pathlib import Path as LocalPath
+
+    upload_items = []
+    for local_path in local_paths:
+        local = LocalPath(local_path)
+        if not local.exists():
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps({"error": f"Local path not found: {local_path}"}),
+                )
+            ]
+        if local.is_file():
+            upload_items.append(("file", str(local), local.name, local.stat().st_size))
+        elif local.is_dir():
+            file_count = sum(1 for _ in local.rglob("*") if _.is_file())
+            upload_items.append(("dir", str(local), local.name, file_count))
+
+    if not upload_items:
+        return [
+            TextContent(
+                type="text", text=json.dumps({"error": "No valid items to upload"})
+            )
+        ]
+
+    # Ensure NAS directory exists
+    with NASClient(config) as nas_client:
+        if not nas_client.path_exists(nas_path):
+            try:
+                nas_client.create_directory(nas_path)
+            except Exception as e:
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(
+                            {"error": f"Failed to create NAS directory: {str(e)}"}
+                        ),
+                    )
+                ]
+
+    # Execute upload
+    stats = {"uploaded": 0, "failed": 0, "skipped": 0}
+    uploaded_files = []
+
+    with NASClient(config) as nas_client:
+        for item_type, item_path, item_name, item_info in upload_items:
+            try:
+                if item_type == "file":
+                    target = f"{nas_path.rstrip('/')}/{item_name}"
+
+                    # Check if exists
+                    if nas_client.path_exists(target) and not overwrite:
+                        stats["skipped"] += 1
+                        continue
+
+                    nas_client.upload_file(item_path, nas_path)
+                    stats["uploaded"] += 1
+                    uploaded_files.append(
+                        {
+                            "type": "file",
+                            "name": item_name,
+                            "size": item_info,
+                            "target": target,
+                        }
+                    )
+                else:  # directory
+                    dir_stats = nas_client.upload_directory(item_path, nas_path, True)
+                    stats["uploaded"] += dir_stats["uploaded"]
+                    stats["failed"] += dir_stats["failed"]
+                    uploaded_files.append(
+                        {
+                            "type": "directory",
+                            "name": item_name,
+                            "files_count": item_info,
+                            "uploaded": dir_stats["uploaded"],
+                        }
+                    )
+
+            except Exception as e:
+                stats["failed"] += 1
+                uploaded_files.append(
+                    {"type": item_type, "name": item_name, "error": str(e)}
+                )
+
+    result = {
+        "nas_path": nas_path,
+        "summary": stats,
+        "uploaded_items": uploaded_files,
+    }
 
     return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
