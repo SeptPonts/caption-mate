@@ -1,5 +1,7 @@
 # Development Guidelines
 
+**This document provides development guidelines for all AI agents (Claude, Gemini, etc.) working on this codebase.**
+
 This document contains critical information about working with this codebase. Follow these guidelines precisely.
 
 ## Core Development Rules

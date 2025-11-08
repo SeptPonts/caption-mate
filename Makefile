@@ -36,3 +36,27 @@ lint:
 	uv run ruff format --check src/
 	uv run ruff check src/
 	@echo "Code formatting is correct!"
+
+.PHONY: mcp-dev
+mcp-dev:
+	uv run caption-mate-mcp
+
+.PHONY: mcp-install
+mcp-install:
+	@echo "=== Caption-Mate MCP Server Installation ==="
+	@echo ""
+	@echo "Add this to your Claude Code MCP settings:"
+	@echo ""
+	@echo '{'
+	@echo '  "caption-mate": {'
+	@echo '    "command": "uv",'
+	@echo '    "args": ["run", "--directory", "$(PWD)", "caption-mate-mcp"]'
+	@echo '  }'
+	@echo '}'
+	@echo ""
+	@echo "Configuration file location:"
+	@echo "  macOS: ~/Library/Application Support/Claude/claude_desktop_config.json"
+	@echo "  Linux: ~/.config/Claude/claude_desktop_config.json"
+	@echo "  Windows: %APPDATA%\\Claude\\claude_desktop_config.json"
+	@echo ""
+	@echo "After adding, restart Claude Code to activate the MCP server."

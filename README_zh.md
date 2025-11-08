@@ -8,6 +8,7 @@
 
 - **🤖 AI智能匹配**: 使用DeepSeek/OpenAI进行语义匹配，准确匹配视频和字幕文件
 - **📁 NAS深度集成**: 通过SMB/CIFS协议无缝连接您的NAS设备
+- **🔌 MCP集成**: 通过模型上下文协议在Claude Code中直接使用Caption-Mate
 - **🔍 双匹配模式**: AI语义匹配和传统正则匹配两种模式可选
 - **📊 多数据源支持**: ASSRT（中文内容优先）和OpenSubtitles（国际内容）自动切换
 - **⚡ 批量处理**: 智能匹配整个视频库，支持用户确认和预览
@@ -47,6 +48,93 @@ uv run caption-mate nas match /电影/第一季 --mode regex --dry-run
 # 预览后执行
 uv run caption-mate nas match /电影/第一季 --mode ai
 ```
+
+## MCP 集成
+
+Caption-Mate 可以通过模型上下文协议（MCP）在 Claude Code 中直接使用，实现对话式字幕管理。
+
+### 什么是 MCP 模式？
+
+MCP 模式允许 Claude 通过自然对话操作您的 NAS 字幕系统：
+- **CLI 模式**: 您需要手动输入终端命令
+- **MCP 模式**: 您只需描述需求，Claude 自动执行操作
+
+### 安装配置
+
+**方式 1: 快速设置**
+```bash
+make mcp-install
+```
+
+**方式 2: 手动配置**
+
+在 Claude Code 的 MCP 设置中添加：
+```json
+{
+  "caption-mate": {
+    "command": "uv",
+    "args": ["run", "--directory", "/path/to/caption-mate", "caption-mate-mcp"]
+  }
+}
+```
+
+将 `/path/to/caption-mate` 替换为您的实际项目路径。
+
+### 可用工具
+
+MCP 服务器为 Claude 提供了 5 个工具：
+
+| 工具 | 功能说明 | 主要参数 |
+|------|---------|---------|
+| `nas_test` | 测试 NAS 连接并列出共享 | 无 |
+| `nas_ls` | 列出文件和目录 | `path`, `long`, `pattern` |
+| `nas_tree` | 显示目录树结构 | `path`, `depth` |
+| `nas_scan` | 扫描视频文件 | `path`, `recursive` |
+| `nas_match` | **匹配并重命名字幕** | `path`, `mode`, `threshold`, `dry_run` |
+
+### 使用示例
+
+**交互式工作流程：**
+
+```
+您: "检查我的 NAS 是否连接正常"
+Claude: [调用 nas_test 工具]
+→ 显示连接状态和可用共享
+
+您: "/电影/第一季 里有哪些视频文件？"
+Claude: [调用 nas_scan，path="/电影/第一季"]
+→ 列出找到的所有视频文件
+
+您: "用 AI 模式匹配字幕，先给我预览一下"
+Claude: [调用 nas_match，mode="ai", dry_run=true]
+→ 显示计划的字幕匹配方案
+
+您: "看起来不错，执行吧"
+Claude: [调用 nas_match，mode="ai", dry_run=false]
+→ 重命名字幕文件以匹配视频
+```
+
+### MCP 模式 vs CLI 模式对比
+
+| 对比项 | MCP 模式 | CLI 模式 |
+|-------|---------|---------|
+| **交互方式** | 自然语言对话 | 终端命令 |
+| **最适合** | 交互式探索、一次性任务 | 自动化脚本、定时任务 |
+| **学习曲线** | 低（只需描述需求） | 中等（需要了解命令） |
+| **灵活性** | 高（Claude 理解意图） | 高（完全命令控制） |
+| **使用场景** | "查找并匹配所有字幕" | `caption-mate nas match /path --mode ai` |
+
+**何时使用 MCP：**
+- 探索 NAS 上的新目录
+- 测试不同的匹配阈值
+- 一次性清理任务
+- 学习工具的使用方法
+
+**何时使用 CLI：**
+- 自动化脚本和 cron 定时任务
+- 批处理流水线
+- CI/CD 集成
+- 可重复的工作流程
 
 ## 核心命令
 

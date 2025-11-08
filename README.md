@@ -8,6 +8,7 @@ A powerful CLI tool for intelligent subtitle management on NAS devices, featurin
 
 - **🤖 AI-Powered Matching**: Smart semantic matching using DeepSeek/OpenAI for accurate subtitle-to-video pairing
 - **📁 NAS Integration**: Connect to your NAS via SMB/CIFS protocol for seamless file management
+- **🔌 MCP Integration**: Use Caption-Mate directly from Claude Code via Model Context Protocol
 - **🔍 Dual Matching Modes**: Choose between AI semantic matching and traditional regex-based matching
 - **📊 Multi-Source Support**: Automatic fallback between ASSRT (Chinese content) and OpenSubtitles (International)
 - **⚡ Batch Processing**: Process entire video libraries with intelligent matching and user confirmation
@@ -47,6 +48,93 @@ uv run caption-mate nas match /Movies/Season1 --mode regex --dry-run
 # Execute after preview
 uv run caption-mate nas match /Movies/Season1 --mode ai
 ```
+
+## MCP Integration
+
+Caption-Mate can be used directly from Claude Code through the Model Context Protocol (MCP), enabling conversational subtitle management.
+
+### What is MCP Mode?
+
+MCP mode allows Claude to operate your NAS subtitle system through natural conversation:
+- **CLI Mode**: You type terminal commands manually
+- **MCP Mode**: You describe what you want, Claude executes the operations
+
+### Installation
+
+**Method 1: Quick Setup**
+```bash
+make mcp-install
+```
+
+**Method 2: Manual Configuration**
+
+Add to your Claude Code MCP settings:
+```json
+{
+  "caption-mate": {
+    "command": "uv",
+    "args": ["run", "--directory", "/path/to/caption-mate", "caption-mate-mcp"]
+  }
+}
+```
+
+Replace `/path/to/caption-mate` with your actual project path.
+
+### Available Tools
+
+The MCP server provides 5 tools for Claude to use:
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `nas_test` | Test NAS connection and list shares | None |
+| `nas_ls` | List files and directories | `path`, `long`, `pattern` |
+| `nas_tree` | Show directory tree structure | `path`, `depth` |
+| `nas_scan` | Scan for video files | `path`, `recursive` |
+| `nas_match` | **Match and rename subtitles** | `path`, `mode`, `threshold`, `dry_run` |
+
+### Usage Examples
+
+**Interactive Workflow:**
+
+```
+You: "Check if my NAS is connected"
+Claude: [Calls nas_test tool]
+→ Shows connection status and available shares
+
+You: "What videos are in /Movies/Season1?"
+Claude: [Calls nas_scan with path="/Movies/Season1"]
+→ Lists all video files found
+
+You: "Match subtitles using AI mode, show me preview first"
+Claude: [Calls nas_match with mode="ai", dry_run=true]
+→ Shows planned subtitle matches
+
+You: "Looks good, execute it"
+Claude: [Calls nas_match with mode="ai", dry_run=false]
+→ Renames subtitle files to match videos
+```
+
+### MCP vs CLI Comparison
+
+| Aspect | MCP Mode | CLI Mode |
+|--------|----------|----------|
+| **Interface** | Natural language conversation | Terminal commands |
+| **Best For** | Interactive exploration, one-off tasks | Automation, scripting, cron jobs |
+| **Learning Curve** | Low (just describe what you want) | Medium (need to know commands) |
+| **Flexibility** | High (Claude adapts to your requests) | High (full command control) |
+| **Use Case** | "Find and match all subtitles" | `caption-mate nas match /path --mode ai` |
+
+**When to use MCP:**
+- Exploring new directories on your NAS
+- Testing different matching thresholds
+- One-time cleanup tasks
+- Learning how the tool works
+
+**When to use CLI:**
+- Automated scripts and cron jobs
+- Batch processing pipelines
+- CI/CD integration
+- Reproducible workflows
 
 ## Core Commands
 
