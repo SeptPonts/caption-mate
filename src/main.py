@@ -1,10 +1,8 @@
 import click
 from dotenv import load_dotenv
 
-from .cli.commands.auto import auto
 from .cli.commands.config import config
 from .cli.commands.nas import nas
-from .cli.commands.subtitles import subtitles
 
 load_dotenv()
 
@@ -19,7 +17,7 @@ load_dotenv()
 @click.option("--quiet", "-q", is_flag=True, help="Suppress non-error output")
 @click.pass_context
 def main(ctx, config_file, verbose, quiet):
-    """Caption-Mate: Search and download subtitles from NAS videos"""
+    """Caption-Mate: Intelligent subtitle matching for NAS videos"""
     ctx.ensure_object(dict)
     ctx.obj["config_file"] = config_file
     ctx.obj["verbose"] = verbose
@@ -29,8 +27,6 @@ def main(ctx, config_file, verbose, quiet):
 # Register commands
 main.add_command(config)
 main.add_command(nas)
-main.add_command(subtitles)
-main.add_command(auto)
 
 
 if __name__ == "__main__":

@@ -75,8 +75,7 @@ async def list_tools() -> list[Tool]:
                     "long": {
                         "type": "boolean",
                         "description": (
-                            "Show detailed information including size and "
-                            "modified time"
+                            "Show detailed information including size and modified time"
                         ),
                         "default": False,
                     },

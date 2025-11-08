@@ -6,21 +6,6 @@ import yaml
 
 
 @dataclass
-class OpenSubtitlesConfig:
-    api_key: Optional[str] = None
-    user_agent: str = "caption-mate-v1.0"
-    username: Optional[str] = None
-    password: Optional[str] = None
-
-
-@dataclass
-class AssrtConfig:
-    api_token: Optional[str] = None
-    base_url: str = "https://api.assrt.net"
-    user_agent: str = "caption-mate-v1.0"
-
-
-@dataclass
 class NASConfig:
     protocol: str = "smb"
     host: Optional[str] = None
@@ -59,8 +44,6 @@ class ScanningConfig:
 
 @dataclass
 class Config:
-    opensubtitles: OpenSubtitlesConfig = field(default_factory=OpenSubtitlesConfig)
-    assrt: AssrtConfig = field(default_factory=AssrtConfig)
     nas: NASConfig = field(default_factory=NASConfig)
     subtitles: SubtitlesConfig = field(default_factory=SubtitlesConfig)
     scanning: ScanningConfig = field(default_factory=ScanningConfig)
@@ -86,8 +69,6 @@ class Config:
                 data = yaml.safe_load(f) or {}
 
             return cls(
-                opensubtitles=OpenSubtitlesConfig(**data.get("opensubtitles", {})),
-                assrt=AssrtConfig(**data.get("assrt", {})),
                 nas=NASConfig(**data.get("nas", {})),
                 subtitles=SubtitlesConfig(**data.get("subtitles", {})),
                 scanning=ScanningConfig(**data.get("scanning", {})),
@@ -106,17 +87,6 @@ class Config:
         config_path.parent.mkdir(parents=True, exist_ok=True)
 
         data = {
-            "opensubtitles": {
-                "api_key": self.opensubtitles.api_key,
-                "user_agent": self.opensubtitles.user_agent,
-                "username": self.opensubtitles.username,
-                "password": self.opensubtitles.password,
-            },
-            "assrt": {
-                "api_token": self.assrt.api_token,
-                "base_url": self.assrt.base_url,
-                "user_agent": self.assrt.user_agent,
-            },
             "nas": {
                 "protocol": self.nas.protocol,
                 "host": self.nas.host,
@@ -185,10 +155,6 @@ class Config:
     def validate(self) -> List[str]:
         """Validate configuration and return list of errors"""
         errors = []
-
-        # Validate OpenSubtitles config
-        if not self.opensubtitles.api_key:
-            errors.append("OpenSubtitles API key is required")
 
         # Validate NAS config
         if not self.nas.host:

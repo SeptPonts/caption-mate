@@ -2,7 +2,7 @@
 
 [English](README.md) | [中文](README_zh.md)
 
-A powerful CLI tool for intelligent subtitle management on NAS devices, featuring AI-powered semantic matching and multi-source subtitle integration.
+A powerful CLI tool for intelligent subtitle matching on NAS devices, featuring AI-powered semantic matching for accurate subtitle-to-video pairing.
 
 ## Features
 
@@ -10,10 +10,9 @@ A powerful CLI tool for intelligent subtitle management on NAS devices, featurin
 - **📁 NAS Integration**: Connect to your NAS via SMB/CIFS protocol for seamless file management
 - **🔌 MCP Integration**: Use Caption-Mate directly from Claude Code via Model Context Protocol
 - **🔍 Dual Matching Modes**: Choose between AI semantic matching and traditional regex-based matching
-- **📊 Multi-Source Support**: Automatic fallback between ASSRT (Chinese content) and OpenSubtitles (International)
 - **⚡ Batch Processing**: Process entire video libraries with intelligent matching and user confirmation
-- **🎯 Smart Filtering**: Skip videos that already have subtitles, customizable similarity thresholds
-- **🌐 Multi-language Support**: Download subtitles in multiple languages simultaneously
+- **🎯 Smart Filtering**: Customizable similarity thresholds for precise matching
+- **🌐 Multi-language Support**: Handle subtitle files in multiple languages
 - **✅ Safe Operations**: Dry-run preview and user confirmation before file operations
 
 ## Quick Start
@@ -165,19 +164,6 @@ uv run caption-mate nas match /path/to/videos --mode ai --dry-run
 uv run caption-mate nas match /path/to/videos --mode ai --force
 ```
 
-### Subtitle Download
-
-```bash
-# Auto mode: scan and download
-uv run caption-mate auto /Movies --dry-run
-
-# Manual download for specific video
-uv run caption-mate subtitles download /Movies/example.mp4
-
-# Batch processing
-uv run caption-mate subtitles batch /Movies
-```
-
 ### Configuration
 
 ```bash
@@ -216,12 +202,6 @@ subtitles:
   languages: ["zh-cn", "en"]
   formats: ["srt", "ass"]
   naming_pattern: "{filename}.{lang}.{ext}"
-
-# Subtitle providers
-assrt:
-  api_token: "your_assrt_token"    # For Chinese content
-opensubtitles:
-  api_key: "your_opensubtitles_key" # For international content
 ```
 
 ## Examples
@@ -265,10 +245,11 @@ uv run caption-mate nas match "/Asian Movies" --mode ai --dry-run
 │   (SMB/CIFS)    │    │                  │    │   (AI/Regex)    │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
                                                          │
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│ Subtitle Sources│◀───│  Download Engine │◀───│ Match Results   │
-│ (ASSRT/OpenSubs)│    │                  │    │ (User Confirm)  │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
+                                                         ▼
+                                                ┌─────────────────┐
+                                                │ Match Results   │
+                                                │ (User Confirm)  │
+                                                └─────────────────┘
 ```
 
 ### Core Components
@@ -276,7 +257,6 @@ uv run caption-mate nas match "/Asian Movies" --mode ai --dry-run
 - **NAS Client**: SMB/CIFS connection management
 - **Video Scanner**: Recursive video file discovery
 - **Subtitle Matcher**: AI semantic matching + regex fallback
-- **Multi-Source Engine**: ASSRT (Chinese) + OpenSubtitles (International)
 - **Safe Operations**: Dry-run preview + user confirmation
 
 ## API Setup
@@ -289,18 +269,6 @@ Set up OpenAI-compatible API (DeepSeek recommended):
 export OAI_MODEL="deepseek-reasoner"
 export OAI_API_KEY="your_api_key"
 export OAI_BASE_URL="https://api.deepseek.com"
-```
-
-### For Subtitle Sources
-
-**ASSRT (Chinese content)**:
-```bash
-uv run caption-mate config set assrt.api_token "your_32_char_token"
-```
-
-**OpenSubtitles (International)**:
-```bash
-uv run caption-mate config set opensubtitles.api_key "your_api_key"
 ```
 
 ## Troubleshooting

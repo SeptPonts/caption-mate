@@ -41,7 +41,6 @@ source = { editable = "." }
 dependencies = [
     { name = "click" },
     { name = "ffmpeg-python" },
-    { name = "httpx" },
     { name = "jsonschema" },
     { name = "langchain-openai" },
     { name = "langgraph" },
@@ -59,7 +58,6 @@ dependencies = [
 requires-dist = [
     { name = "click", specifier = ">=8.0.0" },
     { name = "ffmpeg-python", specifier = ">=0.2.0" },
-    { name = "httpx", specifier = ">=0.24.0" },
     { name = "jsonschema", specifier = ">=4.0.0" },
     { name = "langchain-openai", specifier = ">=0.2.0" },
     { name = "langgraph", specifier = ">=0.2.0" },

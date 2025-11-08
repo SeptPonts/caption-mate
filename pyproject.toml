@@ -1,13 +1,12 @@
 [project]
 name = "caption-mate"
 version = "0.1.0"
-description = "A search and download tool for captions"
+description = "Intelligent subtitle matching tool for NAS videos"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "click>=8.0.0",
     "rich>=13.0.0",
-    "httpx>=0.24.0",
     "pyyaml>=6.0.0",
     "smbprotocol>=1.12.0",
     "pysmb>=1.2.9",

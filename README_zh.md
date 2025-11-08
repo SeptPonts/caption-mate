@@ -2,7 +2,7 @@
 
 [English](README.md) | [中文](README_zh.md)
 
-智能字幕管理工具，专为NAS设备设计，支持AI语义匹配和多数据源字幕集成。
+智能字幕匹配工具，专为NAS设备设计，支持AI语义匹配实现精准的字幕-视频配对。
 
 ## 特性
 
@@ -10,10 +10,9 @@
 - **📁 NAS深度集成**: 通过SMB/CIFS协议无缝连接您的NAS设备
 - **🔌 MCP集成**: 通过模型上下文协议在Claude Code中直接使用Caption-Mate
 - **🔍 双匹配模式**: AI语义匹配和传统正则匹配两种模式可选
-- **📊 多数据源支持**: ASSRT（中文内容优先）和OpenSubtitles（国际内容）自动切换
 - **⚡ 批量处理**: 智能匹配整个视频库，支持用户确认和预览
-- **🎯 智能过滤**: 自动跳过已有字幕的视频，可调节相似度阈值
-- **🌐 多语言支持**: 同时下载多种语言字幕
+- **🎯 智能过滤**: 可调节相似度阈值实现精准匹配
+- **🌐 多语言支持**: 处理多种语言的字幕文件
 - **✅ 安全操作**: 干运行预览和用户确认机制
 
 ## 快速开始
@@ -165,19 +164,6 @@ uv run caption-mate nas match /视频路径 --mode ai --dry-run
 uv run caption-mate nas match /视频路径 --mode ai --force
 ```
 
-### 字幕下载
-
-```bash
-# 自动模式：扫描并下载
-uv run caption-mate auto /电影 --dry-run
-
-# 手动下载特定视频字幕
-uv run caption-mate subtitles download /电影/示例.mp4
-
-# 批量处理
-uv run caption-mate subtitles batch /电影
-```
-
 ### 配置管理
 
 ```bash
@@ -218,12 +204,6 @@ subtitles:
   languages: ["zh-cn", "en"]
   formats: ["srt", "ass"]
   naming_pattern: "{filename}.{lang}.{ext}"
-
-# 字幕数据源
-assrt:
-  api_token: "your_assrt_token"    # 中文内容
-opensubtitles:
-  api_key: "your_opensubtitles_key" # 国际内容
 ```
 
 ## 使用示例
@@ -267,10 +247,11 @@ uv run caption-mate nas match "/亚洲电影" --mode ai --dry-run
 │   (SMB/CIFS)    │    │                  │    │  (AI/正则)      │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
                                                          │
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   字幕数据源     │◀───│   下载引擎        │◀───│   匹配结果       │
-│ (ASSRT/OpenSubs)│    │                  │    │  (用户确认)      │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
+                                                         ▼
+                                                ┌─────────────────┐
+                                                │   匹配结果       │
+                                                │  (用户确认)      │
+                                                └─────────────────┘
 ```
 
 ### 核心组件
@@ -278,7 +259,6 @@ uv run caption-mate nas match "/亚洲电影" --mode ai --dry-run
 - **NAS客户端**: SMB/CIFS连接管理
 - **视频扫描器**: 递归视频文件发现
 - **字幕匹配器**: AI语义匹配 + 正则回退
-- **多源引擎**: ASSRT（中文）+ OpenSubtitles（国际）
 - **安全操作**: 干运行预览 + 用户确认
 
 ## API配置
@@ -291,20 +271,6 @@ uv run caption-mate nas match "/亚洲电影" --mode ai --dry-run
 export OAI_MODEL="deepseek-reasoner"
 export OAI_API_KEY="your_api_key"
 export OAI_BASE_URL="https://api.deepseek.com"
-```
-
-### 字幕数据源
-
-**ASSRT（中文内容）**:
-
-```bash
-uv run caption-mate config set assrt.api_token "your_32_char_token"
-```
-
-**OpenSubtitles（国际内容）**:
-
-```bash
-uv run caption-mate config set opensubtitles.api_key "your_api_key"
 ```
 
 ## 故障排除
@@ -335,31 +301,6 @@ cd caption-mate
 make install
 make test
 ```
-
-## 字幕数据源对比
-
-### ASSRT（默认优先）
-
-- **优势**: 中文字幕资源丰富，社区活跃
-- **搜索方式**: 基于文本搜索
-- **语言支持**: 中文、英文、日韩等多种语言
-- **特点**: 对中文影视作品支持最佳
-- **限制**: 需要注册获取API token，有速率限制
-
-### OpenSubtitles
-
-- **优势**: 国际化字幕资源，支持哈希匹配
-- **搜索方式**: 文件哈希匹配 + 文本搜索
-- **语言支持**: 全球多种语言
-- **特点**: 哈希匹配准确度最高
-- **限制**: 需要API key，对中文资源相对较少
-
-### 使用建议
-
-- **中文内容**: 优先使用ASSRT，AI模式效果更佳
-- **国外内容**: OpenSubtitles提供更好支持
-- **最佳效果**: 不指定provider，让系统自动尝试所有数据源
-- **复杂命名**: 使用AI模式处理混合语言和复杂命名规则
 
 ## 贡献
 
